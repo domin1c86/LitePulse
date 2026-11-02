@@ -1,6 +1,8 @@
 mod icons;
 pub mod layout;
 pub mod paint;
+#[cfg(test)]
+mod perf_tests;
 mod preview;
 mod settings;
 pub mod theme;
