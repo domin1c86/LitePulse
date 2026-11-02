@@ -1,0 +1,5 @@
+/target/
+/dist/
+/docs/screenshots/
+*.log
+*.tmp
