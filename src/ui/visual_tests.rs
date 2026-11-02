@@ -148,6 +148,7 @@ fn render_visual_matrix() {
         };
         bitmap(&format!("target/visual/{name}-preview.bmp"), dpi, &view);
         let settings = Settings {
+            interval_ms: if dpi == 192 { 60_000 } else { 30_000 },
             theme: match theme {
                 ResolvedTheme::Light => crate::config::ThemeSetting::Light,
                 ResolvedTheme::Dark => crate::config::ThemeSetting::Dark,
@@ -162,6 +163,22 @@ fn render_visual_matrix() {
             ..view
         };
         bitmap(&format!("target/visual/{name}-settings.bmp"), dpi, &view);
+        if dpi == 96 {
+            for interval_ms in [30_000, 60_000] {
+                let view = PanelView {
+                    settings: None,
+                    tab: Tab::Cpu,
+                    interval_ms,
+                    hover: Hover::None,
+                    ..view
+                };
+                bitmap(
+                    &format!("target/visual/interval-{interval_ms}.bmp"),
+                    dpi,
+                    &view,
+                );
+            }
+        }
     }
     let empty = Snapshot::empty();
     let mut disconnected = sample(59);

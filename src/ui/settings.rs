@@ -1,6 +1,6 @@
 use super::layout::Layout;
 use crate::{
-    config::{Settings, ThemeSetting, TrayMetric},
+    config::{INTERVAL_OPTIONS_MS, Settings, ThemeSetting, TrayMetric},
     tray::TrayCommand,
     win32::font,
 };
@@ -36,9 +36,9 @@ pub fn choices(l: &Layout, s: &Settings, autostart: bool, misans: bool) -> Vec<C
             true,
             TrayCommand::ToggleAutostart,
         )],
-        [1000, 2000, 5000]
+        INTERVAL_OPTIONS_MS
             .into_iter()
-            .zip(["1 秒", "2 秒", "5 秒"])
+            .zip(["1 秒", "2 秒", "5 秒", "30 秒", "1 分钟"])
             .map(|(ms, label)| {
                 (
                     label,
@@ -142,7 +142,7 @@ mod tests {
             let l = Layout::new(w, h, dpi);
             let s = Settings::default();
             let buttons = choices(&l, &s, false, false);
-            assert_eq!(buttons.len(), 16);
+            assert_eq!(buttons.len(), 18);
             for c in buttons {
                 assert!(c.rect.bottom < h && c.rect.right < w);
                 let command = command_at(&l, &s, false, false, c.rect.left, c.rect.top);

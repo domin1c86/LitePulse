@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::win32::{data_dir, font, logging};
 
-pub const INTERVAL_OPTIONS_MS: [u32; 3] = [1000, 2000, 5000];
+pub const MAX_INTERVAL_MS: u32 = 60_000;
+pub const INTERVAL_OPTIONS_MS: [u32; 5] = [1000, 2000, 5000, 30_000, MAX_INTERVAL_MS];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -175,6 +176,20 @@ mod tests {
         let mut parsed: Settings = serde_json::from_str(r#"{"interval_ms": 333}"#).unwrap();
         parsed.sanitize();
         assert_eq!(parsed.interval_ms, 1000);
+    }
+
+    #[test]
+    fn long_intervals_survive_save_load_and_sanitization() {
+        for interval_ms in [30_000, 60_000] {
+            let settings = Settings {
+                interval_ms,
+                ..Settings::default()
+            };
+            let json = serde_json::to_string(&settings).unwrap();
+            let mut parsed: Settings = serde_json::from_str(&json).unwrap();
+            parsed.sanitize();
+            assert_eq!(parsed.interval_ms, interval_ms);
+        }
     }
 
     #[test]

@@ -1,5 +1,24 @@
 # LitePulse 验证记录
 
+## 2026-11-03：减轻灰底、更新箭头与长间隔采样
+
+浅色概览在原生 Acrylic 上加入 112/255 的白色衬底，提亮背景、减少灰蒙感，模糊仍由系统提供；完全不透明的文字、图标和进度条保持原色。深色背景策略不变。重新读取用户替换的 `images/up.svg` / `down.svg`，生成嵌入蒙版；删除旧上箭头专属 viewBox 修正，统一裁掉素材留白。主界面网络标签与概览均固定红色上传、绿色下载。
+
+设置页、右键菜单、配置校验同步加入 30 秒和 1 分钟。采样线程上限提高到 60 秒；修改间隔通过控制消息打断旧等待。网络采样的暂停阈值随所选间隔调整，允许正常的 30/60 秒速率计算；仍拒绝异常长暂停。图表时间轴分别显示 29 分 30 秒、59 分钟。
+
+| 检查 | 结果 |
+|---|---|
+| 范围测试 | `cargo test config::` 7 passed；`cargo test sampler::` 12 passed；`cargo test ui::` 5 passed / 2 ignored |
+| 完整测试（采样控制与多个模块改变） | `cargo test`：**34 passed / 0 failed / 2 ignored** |
+| 格式、lint | `cargo fmt --all -- --check`、`cargo clippy --all-targets --features console -- -D warnings` 通过；环境仅有缓存硬链接回退提示 |
+| Release | `cargo build --release` 通过，615,424 字节；构建和 `dist/litepulse-updated.exe` 的 SHA-256 均为 `EFCD66F174377252302D56A24D1170437012E3AAA09B54B2044F5082EB412F1A` |
+| 实际窗口（175%） | 核对提亮后的浅色磨砂、深色新箭头；设置页依次选中 30 秒、1 分钟；展开共用右键菜单，点击 30 秒并核对设置页同步 |
+| 固定数据原生 GDI 渲染 | 浅色 100%、深色 175%、微软雅黑 200% 的五项采样按钮；30 秒和 1 分钟的 CPU 时间轴，无截断 |
+
+实际截图：[浅色前后对比](hover-glass-comparison.png)、[新版浅色预览](hover-glass-brighter.jpg)、[深色箭头](hover-glass-dark-arrows.jpg)、[设置页新选项](settings-long-intervals.jpg)、[右键采样菜单](interval-menu.jpg)。原生排版图：[三种比例的设置页](ui-interval-options.png)、[长间隔时间轴](ui-long-windows.png)。前后对比使用不同时间的实际样本，比较的是背景与箭头外观。
+
+交付时旧 `dist/litepulse.exe` 被运行中的进程占用，未覆盖；新版另存为 `dist/litepulse-updated.exe`。先从旧版托盘菜单退出，再运行新版。交互测试实例均已退出，未修改用户配置。真实 Shell 鼠标进入/离开触发链路仍未直接自动化；本次预览检查使用既有 F8 测试入口。长周期速率由实际时间差的单元测试覆盖，未执行满 60 秒的硬件采样对照。
+
 ## 2026-11-03：设置页、紧凑磨砂概览与标题图标对齐
 
 本次概览为 **140×164 DIP**（原宽 280 DIP 的一半），四项指标压缩布局；上传和下载位于同一行，箭头紧挨数字，下载箭头为绿色。网络标签使用并排上下箭头。关闭和设置使用新增 SVG；标题三个图标统一裁去素材留白、使用同尺寸居中绘制框，图钉增加 1 DIP 光学补偿。

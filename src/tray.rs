@@ -32,6 +32,8 @@ const MENU_AUTOSTART: u32 = 1003;
 const MENU_INTERVAL_1S: u32 = 1011;
 const MENU_INTERVAL_2S: u32 = 1012;
 const MENU_INTERVAL_5S: u32 = 1013;
+const MENU_INTERVAL_30S: u32 = 1014;
+const MENU_INTERVAL_1M: u32 = 1015;
 const MENU_THEME_SYSTEM: u32 = 1021;
 const MENU_THEME_DARK: u32 = 1022;
 const MENU_THEME_LIGHT: u32 = 1023;
@@ -320,6 +322,18 @@ impl Tray {
                     settings.interval_ms == 5000,
                 );
                 let wide = to_wide("采样间隔");
+                push_radio(
+                    intervals,
+                    MENU_INTERVAL_30S,
+                    "30 秒",
+                    settings.interval_ms == 30_000,
+                );
+                push_radio(
+                    intervals,
+                    MENU_INTERVAL_1M,
+                    "1 分钟",
+                    settings.interval_ms == 60_000,
+                );
                 let _ = AppendMenuW(menu, MF_POPUP, intervals.0 as usize, PCWSTR(wide.as_ptr()));
             }
             if let Some(themes) = themes {
@@ -400,6 +414,8 @@ impl Tray {
                 MENU_INTERVAL_1S => Some(TrayCommand::SetInterval(1000)),
                 MENU_INTERVAL_2S => Some(TrayCommand::SetInterval(2000)),
                 MENU_INTERVAL_5S => Some(TrayCommand::SetInterval(5000)),
+                MENU_INTERVAL_30S => Some(TrayCommand::SetInterval(30_000)),
+                MENU_INTERVAL_1M => Some(TrayCommand::SetInterval(60_000)),
                 MENU_THEME_SYSTEM => Some(TrayCommand::SetTheme(ThemeSetting::System)),
                 MENU_THEME_DARK => Some(TrayCommand::SetTheme(ThemeSetting::Dark)),
                 MENU_THEME_LIGHT => Some(TrayCommand::SetTheme(ThemeSetting::Light)),

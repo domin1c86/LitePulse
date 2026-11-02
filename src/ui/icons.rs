@@ -40,7 +40,7 @@ pub fn draw(dc: HDC, rect: RECT, icon: Icon, color: COLORREF, bg: COLORREF) {
                 ..rect
             },
             Icon::Up,
-            color,
+            super::theme::upload_color(),
             bg,
         );
         draw(

@@ -304,10 +304,49 @@ impl Renderer {
                         / 3;
                     pixel[..3].copy_from_slice(&black[..3]);
                     pixel[3] = 255 - transparency as u8;
+                    if view.theme == ResolvedTheme::Light {
+                        brighten_glass_pixel(pixel);
+                    }
                 }
             }
             let _ = BitBlt(target, 0, 0, width, height, Some(dc), 0, 0, SRCCOPY);
         }
+    }
+}
+
+// Place a soft white tint behind the foreground, over the native Acrylic.
+// Fully opaque glyphs and bars keep their original color and contrast.
+fn brighten_glass_pixel(pixel: &mut [u8]) {
+    const TINT_ALPHA: u32 = 112;
+    let tint = (255 - pixel[3] as u32) * TINT_ALPHA / 255;
+    for channel in pixel.iter_mut() {
+        *channel = (*channel as u32 + tint).min(255) as u8;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn duration_labels_cover_long_sampling_windows() {
+        assert_eq!(duration_label(30), "30 秒");
+        assert_eq!(duration_label(60), "1 分钟");
+        assert_eq!(duration_label(1770), "29 分 30 秒");
+        assert_eq!(duration_label(3540), "59 分钟");
+    }
+
+    #[test]
+    fn glass_tint_lightens_the_background_without_fading_opaque_content() {
+        let mut background = [0, 0, 0, 0];
+        brighten_glass_pixel(&mut background);
+        assert_eq!(background, [112, 112, 112, 112]);
+        let mut glyph = [30, 80, 200, 255];
+        brighten_glass_pixel(&mut glyph);
+        assert_eq!(glyph, [30, 80, 200, 255]);
+        let mut edge = [20, 40, 80, 128];
+        brighten_glass_pixel(&mut edge);
+        assert_eq!(edge, [75, 95, 135, 183]);
     }
 }
 
@@ -335,6 +374,13 @@ fn row(l: &Layout, y: f32, h: f32) -> RECT {
 }
 fn percent(value: Option<f32>) -> String {
     value.map(format_percent).unwrap_or_else(|| "—".into())
+}
+fn duration_label(seconds: u32) -> String {
+    match (seconds / 60, seconds % 60) {
+        (0, _) => format!("{seconds} 秒"),
+        (minutes, 0) => format!("{minutes} 分钟"),
+        (minutes, remainder) => format!("{minutes} 分 {remainder} 秒"),
+    }
 }
 fn rate(value: Option<f64>) -> String {
     value.map(format_rate).unwrap_or_else(|| "—".into())
@@ -571,7 +617,7 @@ fn draw_body(dc: HDC, l: &Layout, f: &Fonts, p: &Palette, v: &PanelView<'_>) {
                 p,
                 220.0,
                 "采样间隔",
-                &format!("{} 秒", v.interval_ms / 1000),
+                &duration_label(v.interval_ms / 1000),
             );
         }
         Tab::Memory => {
@@ -917,7 +963,7 @@ fn draw_preview(dc: HDC, l: &Layout, f: &Fonts, p: &Palette, v: &PanelView<'_>) 
     }
     let net = s.and_then(|s| s.net.as_ref()).filter(|n| n.connected);
     for (x, icon, value, color) in [
-        (8.0, Icon::Up, net.map(|n| n.up_bps), p.net),
+        (8.0, Icon::Up, net.map(|n| n.up_bps), theme::upload_color()),
         (
             72.0,
             Icon::Down,
@@ -1042,7 +1088,7 @@ fn chart(
     }
     draw_text(
         dc,
-        &format!("{} 秒", (HISTORY_CAP as u32 - 1) * view.interval_ms / 1000),
+        &duration_label((HISTORY_CAP as u32 - 1) * view.interval_ms / 1000),
         &row(l, top + height + 2.0, 17.0),
         f.small,
         p.dim,

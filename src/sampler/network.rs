@@ -10,6 +10,7 @@ use crate::win32::logging;
 pub struct NetSampler {
     previous: Option<Previous>,
     alias: String,
+    max_gap_seconds: f64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -25,6 +26,7 @@ impl NetSampler {
         let mut sampler = Self {
             previous: None,
             alias: String::new(),
+            max_gap_seconds: 10.0,
         };
         sampler.prime();
         sampler
@@ -54,6 +56,10 @@ impl NetSampler {
         &self.alias
     }
 
+    pub fn set_interval_ms(&mut self, interval_ms: u32) {
+        self.max_gap_seconds = (interval_ms as f64 / 1000.0 * 2.0).max(10.0);
+    }
+
     pub fn sample(&mut self) -> Option<NetInfo> {
         let Some(index) = best_interface_index() else {
             self.previous = None;
@@ -79,7 +85,15 @@ impl NetSampler {
 
         let connected = entry.up;
         let (down_bps, up_bps) = if connected {
-            rates(previous, index, entry.in_octets, entry.out_octets, now).unwrap_or((0.0, 0.0))
+            rates(
+                previous,
+                index,
+                entry.in_octets,
+                entry.out_octets,
+                now,
+                self.max_gap_seconds,
+            )
+            .unwrap_or((0.0, 0.0))
         } else {
             (0.0, 0.0)
         };
@@ -158,13 +172,14 @@ fn rates(
     in_octets: u64,
     out_octets: u64,
     now: std::time::Instant,
+    max_gap_seconds: f64,
 ) -> Option<(f64, f64)> {
     let previous = previous?;
     if previous.index != index || now <= previous.at {
         return None;
     }
     let seconds = now.duration_since(previous.at).as_secs_f64();
-    if seconds <= 0.01 || seconds > 10.0 {
+    if seconds <= 0.01 || seconds > max_gap_seconds {
         // Counter reset or a long pause; avoid reporting a bogus spike.
         return None;
     }
@@ -190,7 +205,7 @@ mod tests {
     fn rates_use_actual_elapsed_time() {
         let previous = previous();
         let now = previous.at + std::time::Duration::from_secs(2);
-        let (down, up) = rates(Some(previous), 15, 3_000, 1_500, now).unwrap();
+        let (down, up) = rates(Some(previous), 15, 3_000, 1_500, now, 10.0).unwrap();
         assert!((down - 1_000.0).abs() < 0.01);
         assert!((up - 500.0).abs() < 0.01);
     }
@@ -199,13 +214,50 @@ mod tests {
     fn interface_change_resets_the_baseline() {
         let previous = previous();
         let now = previous.at + std::time::Duration::from_secs(1);
-        assert_eq!(rates(Some(previous), 16, 3_000, 1_500, now), None);
+        assert_eq!(rates(Some(previous), 16, 3_000, 1_500, now, 10.0), None);
     }
 
     #[test]
     fn long_gap_is_ignored() {
         let previous = previous();
         let now = previous.at + std::time::Duration::from_secs(30);
-        assert_eq!(rates(Some(previous), 15, 3_000, 1_500, now), None);
+        assert_eq!(rates(Some(previous), 15, 3_000, 1_500, now, 10.0), None);
+    }
+
+    #[test]
+    fn long_sampling_intervals_report_rates_but_still_reject_large_pauses() {
+        for seconds in [30, 60] {
+            let previous = previous();
+            let mut sampler = NetSampler {
+                previous: None,
+                alias: String::new(),
+                max_gap_seconds: 10.0,
+            };
+            sampler.set_interval_ms(seconds * 1000);
+            let now = previous.at + std::time::Duration::from_secs(seconds as u64);
+            assert_eq!(
+                rates(
+                    Some(previous),
+                    15,
+                    1_000 + seconds as u64 * 1_000,
+                    500 + seconds as u64 * 500,
+                    now,
+                    sampler.max_gap_seconds
+                ),
+                Some((1_000.0, 500.0))
+            );
+            let late = previous.at + std::time::Duration::from_secs(seconds as u64 * 3);
+            assert_eq!(
+                rates(
+                    Some(previous),
+                    15,
+                    10_000,
+                    5_000,
+                    late,
+                    sampler.max_gap_seconds
+                ),
+                None
+            );
+        }
     }
 }

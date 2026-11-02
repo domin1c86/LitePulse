@@ -258,12 +258,17 @@ pub fn run_probe(seconds: u64) {
     }
 }
 
+enum Control {
+    Wake,
+    Stop,
+}
+
 pub struct SamplerHandle {
     latest: Arc<Mutex<Option<Snapshot>>>,
     paused: Arc<AtomicBool>,
     reset: Arc<AtomicBool>,
     interval_ms: Arc<AtomicU64>,
-    stop_tx: Option<mpsc::Sender<()>>,
+    stop_tx: Option<mpsc::Sender<Control>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -272,8 +277,8 @@ impl SamplerHandle {
         let latest = Arc::new(Mutex::new(None));
         let paused = Arc::new(AtomicBool::new(false));
         let reset = Arc::new(AtomicBool::new(false));
-        let interval = Arc::new(AtomicU64::new(interval_ms.clamp(500, 10_000) as u64));
-        let (stop_tx, stop_rx) = mpsc::channel::<()>();
+        let interval = Arc::new(AtomicU64::new(bounded_interval(interval_ms)));
+        let (stop_tx, stop_rx) = mpsc::channel::<Control>();
 
         let thread_latest = Arc::clone(&latest);
         let thread_paused = Arc::clone(&paused);
@@ -315,7 +320,10 @@ impl SamplerHandle {
 
     pub fn set_interval_ms(&self, interval_ms: u32) {
         self.interval_ms
-            .store(interval_ms.clamp(500, 10_000) as u64, Ordering::Relaxed);
+            .store(bounded_interval(interval_ms), Ordering::Relaxed);
+        if let Some(sender) = &self.stop_tx {
+            let _ = sender.send(Control::Wake);
+        }
     }
 
     pub fn set_paused(&self, paused: bool) {
@@ -331,7 +339,7 @@ impl SamplerHandle {
 
     pub fn stop(&mut self) {
         if let Some(sender) = self.stop_tx.take() {
-            let _ = sender.send(());
+            let _ = sender.send(Control::Stop);
         }
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
@@ -347,7 +355,7 @@ impl Drop for SamplerHandle {
 
 fn sampler_loop(
     hwnd: isize,
-    stop_rx: mpsc::Receiver<()>,
+    stop_rx: mpsc::Receiver<Control>,
     latest: Arc<Mutex<Option<Snapshot>>>,
     paused: Arc<AtomicBool>,
     reset: Arc<AtomicBool>,
@@ -376,6 +384,9 @@ fn sampler_loop(
             }
         }
 
+        sources
+            .net
+            .set_interval_ms(interval_ms.load(Ordering::Relaxed) as u32);
         let snapshot = sources.sample();
         if let Ok(mut slot) = latest.lock() {
             *slot = Some(snapshot);
@@ -391,10 +402,41 @@ fn sampler_loop(
     }
 }
 
+fn bounded_interval(interval_ms: u32) -> u64 {
+    interval_ms.clamp(500, crate::config::MAX_INTERVAL_MS) as u64
+}
+
 /// `Ok` means continue, `Err` means stop.
-fn wait_or_stop(stop_rx: &mpsc::Receiver<()>, millis: u64) -> Result<(), ()> {
+fn wait_or_stop(stop_rx: &mpsc::Receiver<Control>, millis: u64) -> Result<(), ()> {
     match stop_rx.recv_timeout(Duration::from_millis(millis)) {
-        Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => Err(()),
+        Ok(Control::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => Err(()),
+        Ok(Control::Wake) => Ok(()),
         Err(mpsc::RecvTimeoutError::Timeout) => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn changing_long_intervals_wakes_the_sampler_and_stop_remains_interruptible() {
+        let (tx, rx) = mpsc::channel();
+        let mut handle = SamplerHandle {
+            latest: Arc::new(Mutex::new(None)),
+            paused: Arc::new(AtomicBool::new(false)),
+            reset: Arc::new(AtomicBool::new(false)),
+            interval_ms: Arc::new(AtomicU64::new(1000)),
+            stop_tx: Some(tx),
+            thread: None,
+        };
+        for ms in [30_000, 60_000, 1000] {
+            handle.set_interval_ms(ms);
+            assert_eq!(handle.interval_ms.load(Ordering::Relaxed), ms as u64);
+            assert!(matches!(rx.try_recv(), Ok(Control::Wake)));
+        }
+        handle.stop();
+        assert!(wait_or_stop(&rx, 60_000).is_err());
+        assert_eq!(bounded_interval(120_000), 60_000);
     }
 }

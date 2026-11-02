@@ -8,14 +8,11 @@ const icons = { cpu: 'CPU.svg', memory: 'memory.svg', gpu: 'graphic.svg', disk: 
 (async () => {
   fs.mkdirSync(path.join(root, 'assets', 'ui'), { recursive: true });
   for (const [name, source] of Object.entries(icons)) {
-    // Some supplied arrows extend beyond their viewBox. Normalize their bounds
-    // so that the full arrow remains visible, including its arrowhead.
-    let svg = fs.readFileSync(path.join(root, 'images', source), 'utf8');
-    if (name === 'up') svg = svg.replace('0 0 1024 1024', '0 0 1024 1120');
+    const svg = fs.readFileSync(path.join(root, 'images', source), 'utf8');
     let image = sharp(Buffer.from(svg), { density: 384 });
-    // Header SVGs have different transparent margins. Normalize their visible
-    // bounds before placing them in the same centered glyph box.
-    if (['pin', 'close', 'settings'].includes(name)) image = image.trim();
+    // Normalize visible bounds so header icons align and both network arrows
+    // occupy matching boxes regardless of the source SVG's transparent margins.
+    if (['pin', 'close', 'settings', 'up', 'down'].includes(name)) image = image.trim();
     const alpha = await image.resize(64, 64, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).ensureAlpha().extractChannel(3).raw().toBuffer();
     fs.writeFileSync(path.join(root, 'assets', 'ui', name + '.alpha'), alpha);
   }

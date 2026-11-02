@@ -33,6 +33,10 @@ pub const fn download_color() -> COLORREF {
     rgb(48, 170, 100)
 }
 
+pub const fn upload_color() -> COLORREF {
+    rgb(220, 62, 62)
+}
+
 pub fn resolve(setting: ThemeSetting) -> ResolvedTheme {
     match setting {
         ThemeSetting::Dark => ResolvedTheme::Dark,
