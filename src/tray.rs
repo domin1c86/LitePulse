@@ -34,6 +34,7 @@ const MENU_INTERVAL_2S: u32 = 1012;
 const MENU_INTERVAL_5S: u32 = 1013;
 const MENU_INTERVAL_30S: u32 = 1014;
 const MENU_INTERVAL_1M: u32 = 1015;
+const MENU_INTERACTION_BOOST: u32 = 1016;
 const MENU_THEME_SYSTEM: u32 = 1021;
 const MENU_THEME_DARK: u32 = 1022;
 const MENU_THEME_LIGHT: u32 = 1023;
@@ -51,6 +52,7 @@ pub enum TrayCommand {
     ToggleTopmost,
     ToggleAutostart,
     SetInterval(u32),
+    ToggleInteractionBoost,
     SetTheme(ThemeSetting),
     SetFontFamily(String),
     SetTrayMetric(TrayMetric),
@@ -321,7 +323,7 @@ impl Tray {
                     "5 秒",
                     settings.interval_ms == 5000,
                 );
-                let wide = to_wide("采样间隔");
+                let wide = to_wide("后台采样间隔");
                 push_radio(
                     intervals,
                     MENU_INTERVAL_30S,
@@ -336,6 +338,18 @@ impl Tray {
                 );
                 let _ = AppendMenuW(menu, MF_POPUP, intervals.0 as usize, PCWSTR(wide.as_ptr()));
             }
+            let mut boost_flags = MF_STRING;
+            if settings.interval_ms == 1000 {
+                boost_flags |= MF_GRAYED;
+            } else if settings.boost_on_interaction {
+                boost_flags |= MF_CHECKED;
+            }
+            append_item(
+                menu,
+                boost_flags,
+                MENU_INTERACTION_BOOST as usize,
+                "交互时切至 1 秒",
+            );
             if let Some(themes) = themes {
                 push_radio(
                     themes,
@@ -416,6 +430,7 @@ impl Tray {
                 MENU_INTERVAL_5S => Some(TrayCommand::SetInterval(5000)),
                 MENU_INTERVAL_30S => Some(TrayCommand::SetInterval(30_000)),
                 MENU_INTERVAL_1M => Some(TrayCommand::SetInterval(60_000)),
+                MENU_INTERACTION_BOOST => Some(TrayCommand::ToggleInteractionBoost),
                 MENU_THEME_SYSTEM => Some(TrayCommand::SetTheme(ThemeSetting::System)),
                 MENU_THEME_DARK => Some(TrayCommand::SetTheme(ThemeSetting::Dark)),
                 MENU_THEME_LIGHT => Some(TrayCommand::SetTheme(ThemeSetting::Light)),

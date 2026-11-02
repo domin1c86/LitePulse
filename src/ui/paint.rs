@@ -317,7 +317,7 @@ impl Renderer {
 // Place a soft white tint behind the foreground, over the native Acrylic.
 // Fully opaque glyphs and bars keep their original color and contrast.
 fn brighten_glass_pixel(pixel: &mut [u8]) {
-    const TINT_ALPHA: u32 = 112;
+    const TINT_ALPHA: u32 = 192;
     let tint = (255 - pixel[3] as u32) * TINT_ALPHA / 255;
     for channel in pixel.iter_mut() {
         *channel = (*channel as u32 + tint).min(255) as u8;
@@ -340,13 +340,13 @@ mod tests {
     fn glass_tint_lightens_the_background_without_fading_opaque_content() {
         let mut background = [0, 0, 0, 0];
         brighten_glass_pixel(&mut background);
-        assert_eq!(background, [112, 112, 112, 112]);
+        assert_eq!(background, [192, 192, 192, 192]);
         let mut glyph = [30, 80, 200, 255];
         brighten_glass_pixel(&mut glyph);
         assert_eq!(glyph, [30, 80, 200, 255]);
         let mut edge = [20, 40, 80, 128];
         brighten_glass_pixel(&mut edge);
-        assert_eq!(edge, [75, 95, 135, 183]);
+        assert_eq!(edge, [115, 135, 175, 223]);
     }
 }
 
@@ -872,7 +872,13 @@ fn draw_settings(dc: HDC, l: &Layout, f: &Fonts, p: &Palette, v: &PanelView<'_>)
         draw_text(
             dc,
             label,
-            &rect(l, 24.0, 110.0 + i as f32 * 47.0, 130.0, 35.0),
+            &rect(
+                l,
+                24.0,
+                110.0 + i as f32 * super::settings::ROW_PITCH,
+                130.0,
+                35.0,
+            ),
             f.label,
             p.dim,
             Align::Left,

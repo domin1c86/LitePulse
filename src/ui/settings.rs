@@ -13,10 +13,12 @@ pub struct Choice {
     pub enabled: bool,
     pub command: TrayCommand,
 }
-pub const ROW_LABELS: [&str; 6] = [
+pub const ROW_PITCH: f32 = 41.0;
+pub const ROW_LABELS: [&str; 7] = [
     "窗口置顶",
     "开机启动",
-    "采样间隔",
+    "后台采样间隔",
+    "交互自动加速",
     "主题",
     "字体",
     "托盘指标",
@@ -48,6 +50,18 @@ pub fn choices(l: &Layout, s: &Settings, autostart: bool, misans: bool) -> Vec<C
                 )
             })
             .collect(),
+        vec![(
+            if s.interval_ms == 1000 {
+                "基础间隔为 1 秒，无需加速"
+            } else if s.boost_on_interaction {
+                "已开启 · 交互时切至 1 秒"
+            } else {
+                "已关闭 · 按后台间隔采样"
+            },
+            s.boost_on_interaction && s.interval_ms != 1000,
+            s.interval_ms != 1000,
+            TrayCommand::ToggleInteractionBoost,
+        )],
         [
             ThemeSetting::System,
             ThemeSetting::Light,
@@ -97,7 +111,7 @@ pub fn choices(l: &Layout, s: &Settings, autostart: bool, misans: bool) -> Vec<C
         .enumerate()
         .flat_map(|(row, items)| {
             let count = items.len() as i32;
-            let start = l.s(if row == 6 { 24.0 } else { 164.0 });
+            let start = l.s(if row == 7 { 24.0 } else { 164.0 });
             let available = l.width - start - l.s(24.0);
             items
                 .into_iter()
@@ -106,8 +120,8 @@ pub fn choices(l: &Layout, s: &Settings, autostart: bool, misans: bool) -> Vec<C
                     rect: RECT {
                         left: start + available * col as i32 / count,
                         right: start + available * (col + 1) as i32 / count - l.s(6.0),
-                        top: l.s(110.0 + row as f32 * 47.0),
-                        bottom: l.s(145.0 + row as f32 * 47.0),
+                        top: l.s(110.0 + row as f32 * ROW_PITCH),
+                        bottom: l.s(145.0 + row as f32 * ROW_PITCH),
                     },
                     label,
                     selected,
@@ -136,13 +150,39 @@ pub fn command_at(
 mod tests {
     use super::*;
     #[test]
+    fn one_second_disables_boost_without_losing_the_saved_preference() {
+        let (w, h) = super::super::layout::panel_size(96);
+        let l = Layout::new(w, h, 96);
+        let mut s = Settings {
+            interval_ms: 1000,
+            ..Settings::default()
+        };
+        for (interval, boost, enabled, selected) in [
+            (1000, true, false, false),
+            (30_000, true, true, true),
+            (30_000, false, true, false),
+        ] {
+            s.interval_ms = interval;
+            s.boost_on_interaction = boost;
+            let c = choices(&l, &s, false, true)
+                .into_iter()
+                .find(|c| c.command == TrayCommand::ToggleInteractionBoost)
+                .unwrap();
+            assert_eq!((c.enabled, c.selected), (enabled, selected));
+            assert_eq!(
+                command_at(&l, &s, false, true, c.rect.left, c.rect.top),
+                enabled.then_some(TrayCommand::ToggleInteractionBoost)
+            );
+        }
+    }
+    #[test]
     fn all_menu_commands_have_clickable_settings_and_disabled_fonts_do_not_fire() {
         for dpi in [96, 168, 192] {
             let (w, h) = super::super::layout::panel_size(dpi);
             let l = Layout::new(w, h, dpi);
             let s = Settings::default();
             let buttons = choices(&l, &s, false, false);
-            assert_eq!(buttons.len(), 18);
+            assert_eq!(buttons.len(), 19);
             for c in buttons {
                 assert!(c.rect.bottom < h && c.rect.right < w);
                 let command = command_at(&l, &s, false, false, c.rect.left, c.rect.top);

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::win32::{data_dir, font, logging};
 
 pub const MAX_INTERVAL_MS: u32 = 60_000;
+pub const DEFAULT_INTERVAL_MS: u32 = 30_000;
 pub const INTERVAL_OPTIONS_MS: [u32; 5] = [1000, 2000, 5000, 30_000, MAX_INTERVAL_MS];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -54,6 +55,7 @@ pub struct Settings {
     pub version: u32,
     pub theme: ThemeSetting,
     pub interval_ms: u32,
+    pub boost_on_interaction: bool,
     pub always_on_top: bool,
     pub tray_metric: TrayMetric,
     pub font_family: String,
@@ -66,7 +68,8 @@ impl Default for Settings {
         Self {
             version: 1,
             theme: ThemeSetting::System,
-            interval_ms: 1000,
+            interval_ms: DEFAULT_INTERVAL_MS,
+            boost_on_interaction: true,
             always_on_top: true,
             tray_metric: TrayMetric::Cpu,
             font_family: font::DEFAULT_FAMILY.to_string(),
@@ -77,6 +80,13 @@ impl Default for Settings {
 }
 
 impl Settings {
+    pub fn effective_interval_ms(&self, panel: bool, tray_hover: bool, menu: bool) -> u32 {
+        if self.boost_on_interaction && (panel || tray_hover || menu) {
+            1000
+        } else {
+            self.interval_ms
+        }
+    }
     pub fn path() -> PathBuf {
         data_dir().join("settings.json")
     }
@@ -116,7 +126,7 @@ impl Settings {
             self.version = 1;
         }
         if !INTERVAL_OPTIONS_MS.contains(&self.interval_ms) {
-            self.interval_ms = 1000;
+            self.interval_ms = DEFAULT_INTERVAL_MS;
         }
         let family = self.font_family.trim();
         if family.is_empty() {
@@ -134,7 +144,8 @@ mod tests {
     #[test]
     fn defaults_are_valid() {
         let settings = Settings::default();
-        assert_eq!(settings.interval_ms, 1000);
+        assert_eq!(settings.interval_ms, DEFAULT_INTERVAL_MS);
+        assert!(settings.boost_on_interaction);
         assert!(settings.always_on_top);
         assert_eq!(settings.theme, ThemeSetting::System);
         assert_eq!(settings.font_family, font::DEFAULT_FAMILY);
@@ -146,6 +157,7 @@ mod tests {
             version: 1,
             theme: ThemeSetting::Dark,
             interval_ms: 2000,
+            boost_on_interaction: false,
             always_on_top: false,
             tray_metric: TrayMetric::Memory,
             font_family: "Microsoft YaHei UI".to_string(),
@@ -156,6 +168,7 @@ mod tests {
         let parsed: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.theme, ThemeSetting::Dark);
         assert_eq!(parsed.interval_ms, 2000);
+        assert!(!parsed.boost_on_interaction);
         assert_eq!(parsed.window_x, Some(100));
         assert!(!parsed.always_on_top);
         assert_eq!(parsed.font_family, "Microsoft YaHei UI");
@@ -165,17 +178,50 @@ mod tests {
     #[test]
     fn missing_fields_use_defaults() {
         let parsed: Settings = serde_json::from_str("{}").unwrap();
-        assert_eq!(parsed.interval_ms, 1000);
+        assert_eq!(parsed.interval_ms, DEFAULT_INTERVAL_MS);
         assert_eq!(parsed.theme, ThemeSetting::System);
         assert_eq!(parsed.font_family, font::DEFAULT_FAMILY);
         assert_eq!(parsed.tray_metric, TrayMetric::Cpu);
+        assert!(parsed.boost_on_interaction);
+    }
+
+    #[test]
+    fn any_interaction_boosts_only_when_enabled_and_preserves_the_background_choice() {
+        for interval_ms in INTERVAL_OPTIONS_MS {
+            for boost_on_interaction in [false, true] {
+                let settings = Settings {
+                    interval_ms,
+                    boost_on_interaction,
+                    ..Settings::default()
+                };
+                for state in 0..8 {
+                    let active = state != 0;
+                    assert_eq!(
+                        settings.effective_interval_ms(
+                            state & 1 != 0,
+                            state & 2 != 0,
+                            state & 4 != 0
+                        ),
+                        if active && boost_on_interaction {
+                            1000
+                        } else {
+                            interval_ms
+                        }
+                    );
+                    assert_eq!(settings.interval_ms, interval_ms);
+                }
+            }
+        }
+        let old: Settings = serde_json::from_str(r#"{"interval_ms":1000}"#).unwrap();
+        assert_eq!(old.interval_ms, 1000);
+        assert!(old.boost_on_interaction);
     }
 
     #[test]
     fn invalid_interval_is_repaired() {
         let mut parsed: Settings = serde_json::from_str(r#"{"interval_ms": 333}"#).unwrap();
         parsed.sanitize();
-        assert_eq!(parsed.interval_ms, 1000);
+        assert_eq!(parsed.interval_ms, DEFAULT_INTERVAL_MS);
     }
 
     #[test]

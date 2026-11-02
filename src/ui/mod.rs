@@ -203,10 +203,14 @@ struct App {
     settings_open: bool,
     autostart_enabled: bool,
     misans_available: bool,
+    effective_interval_ms: u32,
+    tray_hovered: bool,
+    menu_open: bool,
 }
 
 impl App {
     fn new(settings: Settings, startup_hidden: bool) -> Self {
+        let effective_interval_ms = settings.interval_ms;
         Self {
             hwnd: HWND(std::ptr::null_mut()),
             settings,
@@ -231,6 +235,9 @@ impl App {
             settings_open: false,
             autostart_enabled: autostart::is_enabled(),
             misans_available: font::family_available(font::DEFAULT_FAMILY),
+            effective_interval_ms,
+            tray_hovered: false,
+            menu_open: false,
         }
     }
 
@@ -264,7 +271,7 @@ impl App {
 
         self.sampler = Some(SamplerHandle::start(
             hwnd.0 as isize,
-            self.settings.interval_ms,
+            self.effective_interval_ms,
         ));
 
         if unsafe { WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION) }.is_ok() {
@@ -370,7 +377,9 @@ impl App {
     }
 
     fn show_panel(&mut self) {
+        self.visible = true;
         self.hide_preview();
+        self.update_sampling_policy();
         self.ensure_on_screen();
         unsafe {
             let _ = ShowWindow(self.hwnd, SW_SHOW);
@@ -382,7 +391,6 @@ impl App {
             let _ = SetForegroundWindow(self.hwnd);
             let _ = InvalidateRect(Some(self.hwnd), None, false);
         }
-        self.visible = true;
         logging::log(&format!(
             "panel shown (topmost={})",
             self.settings.always_on_top
@@ -394,6 +402,7 @@ impl App {
             let _ = ShowWindow(self.hwnd, SW_HIDE);
         }
         self.visible = false;
+        self.update_sampling_policy();
         self.renderer.release_backbuffer();
         self.renderer.invalidate_fonts();
         self.save_position();
@@ -496,15 +505,39 @@ impl App {
         }
     }
 
+    fn update_sampling_policy(&mut self) {
+        let interval =
+            self.settings
+                .effective_interval_ms(self.visible, self.tray_hovered, self.menu_open);
+        if interval == self.effective_interval_ms {
+            return;
+        }
+        self.effective_interval_ms = interval;
+        // History positions assume a fixed cadence. Begin a new timeline when
+        // switching between background and interactive sampling.
+        self.history = History::new();
+        if let Some(sampler) = self.sampler.as_ref() {
+            sampler.set_interval_ms(interval);
+            logging::log(&format!(
+                "sampling interval: {interval} ms (background={} ms, panel={}, hover={}, menu={})",
+                self.settings.interval_ms, self.visible, self.tray_hovered, self.menu_open
+            ));
+        }
+    }
+
     fn hide_preview(&mut self) {
+        self.tray_hovered = false;
         if let Some(preview) = self.preview.as_mut() {
             if preview.visible {
                 preview.hide();
             }
         }
+        self.update_sampling_policy();
     }
 
     fn show_preview(&mut self) {
+        self.tray_hovered = true;
+        self.update_sampling_policy();
         let anchor = self
             .tray
             .as_ref()
@@ -553,7 +586,7 @@ impl App {
             font_family: &self.font_family,
             hover: self.hover,
             tab: self.tab,
-            interval_ms: self.settings.interval_ms,
+            interval_ms: self.effective_interval_ms,
             preview: false,
             settings: self.settings_open.then_some(&self.settings),
             autostart: self.autostart_enabled,
@@ -795,7 +828,6 @@ impl App {
         } else if event == NIN_POPUPCLOSE {
             self.hide_preview();
         } else if event == WM_CONTEXTMENU || event == WM_RBUTTONUP {
-            self.hide_preview();
             self.show_tray_menu();
         } else if event == NIN_SELECT || event == NIN_KEYSELECT || event == WM_LBUTTONUP {
             self.toggle_panel_debounced();
@@ -804,6 +836,9 @@ impl App {
     }
 
     fn show_tray_menu(&mut self) {
+        self.menu_open = true;
+        self.hide_preview();
+        self.update_sampling_policy();
         self.autostart_enabled = autostart::is_enabled();
         let command = self
             .tray
@@ -812,6 +847,8 @@ impl App {
         if let Some(command) = command {
             self.handle_tray_command(command);
         }
+        self.menu_open = false;
+        self.update_sampling_policy();
     }
 
     fn handle_tray_command(&mut self, command: TrayCommand) {
@@ -829,13 +866,15 @@ impl App {
                 }
             }
             TrayCommand::SetInterval(interval_ms) => {
-                if self.settings.interval_ms != interval_ms {
-                    self.history = History::new();
-                }
                 self.settings.interval_ms = interval_ms;
                 self.settings.sanitize();
-                if let Some(sampler) = self.sampler.as_ref() {
-                    sampler.set_interval_ms(self.settings.interval_ms);
+                self.update_sampling_policy();
+                self.save_settings();
+            }
+            TrayCommand::ToggleInteractionBoost => {
+                if self.settings.interval_ms != 1000 {
+                    self.settings.boost_on_interaction = !self.settings.boost_on_interaction;
+                    self.update_sampling_policy();
                 }
                 self.save_settings();
             }
@@ -1096,4 +1135,51 @@ fn clamp_position(x: i32, y: i32, width: i32, height: i32, work: RECT) -> (i32, 
     let max_x = (work.right - width).max(work.left);
     let max_y = (work.bottom - height).max(work.top);
     (x.clamp(work.left, max_x), y.clamp(work.top, max_y))
+}
+
+#[cfg(test)]
+mod sampling_tests {
+    use super::*;
+
+    #[test]
+    fn interactions_overlap_without_losing_boost_and_only_cadence_changes_clear_history() {
+        let mut app = App::new(Settings::default(), true);
+        // No native window is attached in this policy integration test.
+        app.cleaned_up = true;
+        assert_eq!(app.effective_interval_ms, 30_000);
+        app.handle_tray_callback(LPARAM(NIN_POPUPOPEN as isize));
+        assert_eq!(app.effective_interval_ms, 1000);
+        let mut sample = Snapshot::empty();
+        sample.cpu_pct = Some(25.0);
+        app.history.push(&sample);
+        app.menu_open = true;
+        app.hide_preview();
+        assert_eq!(app.effective_interval_ms, 1000);
+        assert_eq!(app.history.cpu.len(), 1);
+        app.menu_open = false;
+        app.update_sampling_policy();
+        assert_eq!(app.effective_interval_ms, 30_000);
+        assert!(app.history.cpu.is_empty());
+        app.visible = true;
+        app.update_sampling_policy();
+        assert_eq!(app.effective_interval_ms, 1000);
+        app.history.push(&sample);
+        app.settings.interval_ms = 60_000;
+        app.update_sampling_policy();
+        assert_eq!(app.effective_interval_ms, 1000);
+        assert_eq!(app.history.cpu.len(), 1);
+        app.settings.boost_on_interaction = false;
+        app.update_sampling_policy();
+        assert_eq!(app.effective_interval_ms, 60_000);
+        assert!(app.history.cpu.is_empty());
+        app.visible = false;
+        app.settings.boost_on_interaction = true;
+        app.settings.interval_ms = 1000;
+        app.update_sampling_policy();
+        app.handle_tray_command(TrayCommand::ToggleInteractionBoost);
+        assert!(app.settings.boost_on_interaction);
+        app.handle_tray_callback(LPARAM(NIN_POPUPOPEN as isize));
+        app.handle_tray_callback(LPARAM(NIN_POPUPCLOSE as isize));
+        assert_eq!(app.effective_interval_ms, 1000);
+    }
 }

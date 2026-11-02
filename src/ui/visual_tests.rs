@@ -163,6 +163,24 @@ fn render_visual_matrix() {
             ..view
         };
         bitmap(&format!("target/visual/{name}-settings.bmp"), dpi, &view);
+        for (state, interval_ms, boost_on_interaction) in
+            [("disabled", 1000, true), ("off", 30_000, false)]
+        {
+            let settings = Settings {
+                interval_ms,
+                boost_on_interaction,
+                ..settings.clone()
+            };
+            let view = PanelView {
+                settings: Some(&settings),
+                ..view
+            };
+            bitmap(
+                &format!("target/visual/{name}-boost-{state}.bmp"),
+                dpi,
+                &view,
+            );
+        }
         if dpi == 96 {
             for interval_ms in [30_000, 60_000] {
                 let view = PanelView {
