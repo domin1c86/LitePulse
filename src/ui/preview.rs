@@ -11,8 +11,17 @@ use crate::{
 };
 use std::mem::size_of;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
-use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, InvalidateRect, PAINTSTRUCT};
+use windows::Win32::Graphics::Dwm::{
+    DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_IMMERSIVE_DARK_MODE,
+    DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmExtendFrameIntoClientArea,
+    DwmSetWindowAttribute,
+};
+use windows::Win32::Graphics::Gdi::{
+    BeginPaint, CreateRoundRectRgn, DeleteObject, EndPaint, HGDIOBJ, InvalidateRect, PAINTSTRUCT,
+    SetWindowRgn,
+};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::PCWSTR;
 
@@ -25,6 +34,7 @@ pub struct Preview {
     family: String,
     dpi: u32,
     pub visible: bool,
+    glass: bool,
 }
 impl Preview {
     pub fn new(owner: HWND) -> Option<Box<Self>> {
@@ -47,7 +57,7 @@ impl Preview {
                 WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST,
                 PCWSTR(class.as_ptr()),
                 PCWSTR(title.as_ptr()),
-                WS_POPUP | WS_BORDER,
+                WS_POPUP,
                 0,
                 0,
                 1,
@@ -68,6 +78,7 @@ impl Preview {
             family: String::new(),
             dpi: 96,
             visible: false,
+            glass: false,
         });
         unsafe {
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, (&mut *preview as *mut Self) as isize);
@@ -78,6 +89,7 @@ impl Preview {
         self.snapshot = snapshot.cloned();
         self.settings = settings.clone();
         self.family = family.into();
+        self.apply_material();
         if self.visible {
             unsafe {
                 let _ = InvalidateRect(Some(self.hwnd), None, false);
@@ -88,6 +100,15 @@ impl Preview {
         self.dpi = dpi;
         let w = dpi::scale(PREVIEW_W_DIP, dpi);
         let h = dpi::scale(PREVIEW_H_DIP, dpi);
+        if !self.glass {
+            let radius = dpi::scale(10.0, dpi);
+            unsafe {
+                let region = CreateRoundRectRgn(0, 0, w + 1, h + 1, radius * 2, radius * 2);
+                if !region.0.is_null() && SetWindowRgn(self.hwnd, Some(region), false) == 0 {
+                    let _ = DeleteObject(HGDIOBJ(region.0));
+                }
+            }
+        }
         let gap = dpi::scale(8.0, dpi);
         let x = (anchor.left + (anchor.right - anchor.left) / 2 - w / 2)
             .clamp(work.left, (work.right - w).max(work.left));
@@ -111,6 +132,40 @@ impl Preview {
         self.visible = true;
         unsafe {
             let _ = InvalidateRect(Some(self.hwnd), None, false);
+        }
+    }
+    fn apply_material(&mut self) {
+        let dark: i32 = (theme::resolve(self.settings.theme) == theme::ResolvedTheme::Dark).into();
+        unsafe {
+            let _ = DwmSetWindowAttribute(
+                self.hwnd,
+                DWMWA_USE_IMMERSIVE_DARK_MODE,
+                (&dark as *const i32).cast(),
+                size_of::<i32>() as u32,
+            );
+            let _ = DwmSetWindowAttribute(
+                self.hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                &DWMWCP_ROUND as *const _ as *const std::ffi::c_void,
+                size_of_val(&DWMWCP_ROUND) as u32,
+            );
+            self.glass = DwmSetWindowAttribute(
+                self.hwnd,
+                DWMWA_SYSTEMBACKDROP_TYPE,
+                &DWMSBT_TRANSIENTWINDOW as *const _ as *const std::ffi::c_void,
+                size_of_val(&DWMSBT_TRANSIENTWINDOW) as u32,
+            )
+            .is_ok()
+                && DwmExtendFrameIntoClientArea(
+                    self.hwnd,
+                    &MARGINS {
+                        cxLeftWidth: -1,
+                        cxRightWidth: -1,
+                        cyTopHeight: -1,
+                        cyBottomHeight: -1,
+                    },
+                )
+                .is_ok();
         }
     }
     pub fn hide(&mut self) {
@@ -138,6 +193,10 @@ impl Preview {
             tab: Tab::Cpu,
             interval_ms: self.settings.interval_ms,
             preview: true,
+            settings: None,
+            autostart: false,
+            misans: true,
+            glass: self.glass,
         };
         self.renderer.paint(dc, r.right, r.bottom, self.dpi, &view);
         unsafe {

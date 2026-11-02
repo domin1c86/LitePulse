@@ -2,6 +2,7 @@ mod icons;
 pub mod layout;
 pub mod paint;
 mod preview;
+mod settings;
 pub mod theme;
 #[cfg(test)]
 mod visual_tests;
@@ -199,6 +200,9 @@ struct App {
     cleaned_up: bool,
     tab: Tab,
     preview: Option<Box<Preview>>,
+    settings_open: bool,
+    autostart_enabled: bool,
+    misans_available: bool,
 }
 
 impl App {
@@ -224,6 +228,9 @@ impl App {
             cleaned_up: false,
             tab: Tab::Cpu,
             preview: None,
+            settings_open: false,
+            autostart_enabled: autostart::is_enabled(),
+            misans_available: font::family_available(font::DEFAULT_FAMILY),
         }
     }
 
@@ -548,6 +555,10 @@ impl App {
             tab: self.tab,
             interval_ms: self.settings.interval_ms,
             preview: false,
+            settings: self.settings_open.then_some(&self.settings),
+            autostart: self.autostart_enabled,
+            misans: self.misans_available,
+            glass: false,
         };
         self.renderer
             .paint(dc, rect.right, rect.bottom, self.dpi, &view);
@@ -618,6 +629,22 @@ impl App {
                     self.hide_panel();
                 } else if Layout::contains(&layout.pin, point.x, point.y) {
                     self.toggle_topmost();
+                } else if Layout::contains(&layout.settings, point.x, point.y) {
+                    self.settings_open = !self.settings_open;
+                    self.autostart_enabled = autostart::is_enabled();
+                    self.hover = Hover::Settings;
+                    self.invalidate();
+                } else if self.settings_open {
+                    if let Some(command) = settings::command_at(
+                        &layout,
+                        &self.settings,
+                        self.autostart_enabled,
+                        self.misans_available,
+                        point.x,
+                        point.y,
+                    ) {
+                        self.handle_tray_command(command);
+                    }
                 } else if let Some(tab) = layout.tab_at(point.x, point.y) {
                     self.tab = tab;
                     self.invalidate();
@@ -637,8 +664,14 @@ impl App {
                     return self.handle_tray_callback(LPARAM(event as isize));
                 }
                 if wparam.0 == VK_ESCAPE {
-                    self.hide_panel();
-                } else if wparam.0 == 0x25 || wparam.0 == 0x27 {
+                    if self.settings_open {
+                        self.settings_open = false;
+                        self.hover = Hover::None;
+                        self.invalidate();
+                    } else {
+                        self.hide_panel();
+                    }
+                } else if !self.settings_open && (wparam.0 == 0x25 || wparam.0 == 0x27) {
                     let index = Tab::ALL.iter().position(|t| *t == self.tab).unwrap_or(0);
                     let delta = if wparam.0 == 0x27 { 1 } else { 4 };
                     self.tab = Tab::ALL[(index + delta) % 5];
@@ -655,6 +688,7 @@ impl App {
                 let layout = Layout::new(self.client_width(), self.client_height(), self.dpi);
                 if Layout::contains(&layout.close, client.x, client.y)
                     || Layout::contains(&layout.pin, client.x, client.y)
+                    || Layout::contains(&layout.settings, client.x, client.y)
                 {
                     Some(LRESULT(HTCLIENT as isize))
                 } else if client.y < layout.header_bottom {
@@ -770,6 +804,7 @@ impl App {
     }
 
     fn show_tray_menu(&mut self) {
+        self.autostart_enabled = autostart::is_enabled();
         let command = self
             .tray
             .as_ref()
@@ -784,8 +819,9 @@ impl App {
             TrayCommand::TogglePanel => self.toggle_panel(),
             TrayCommand::ToggleTopmost => self.toggle_topmost(),
             TrayCommand::ToggleAutostart => {
-                let enabled = !autostart::is_enabled();
-                if autostart::set_enabled(enabled) {
+                let enabled = !self.autostart_enabled;
+                if cfg!(test) || autostart::set_enabled(enabled) {
+                    self.autostart_enabled = enabled;
                     logging::log(&format!(
                         "autostart {}",
                         if enabled { "enabled" } else { "disabled" }
@@ -835,6 +871,8 @@ impl App {
                 }
             }
         }
+        self.invalidate();
+        self.update_preview();
     }
 
     fn toggle_topmost(&mut self) {
@@ -851,6 +889,19 @@ impl App {
             Hover::Pin
         } else if Layout::contains(&layout.close, point.x, point.y) {
             Hover::Close
+        } else if Layout::contains(&layout.settings, point.x, point.y) {
+            Hover::Settings
+        } else if self.settings_open {
+            settings::choices(
+                &layout,
+                &self.settings,
+                self.autostart_enabled,
+                self.misans_available,
+            )
+            .iter()
+            .position(|c| c.enabled && Layout::contains(&c.rect, point.x, point.y))
+            .map(Hover::Choice)
+            .unwrap_or(Hover::None)
         } else if let Some(tab) = layout.tab_at(point.x, point.y) {
             Hover::Tab(tab)
         } else {
@@ -923,7 +974,20 @@ impl App {
         let layout = Layout::new(self.client_width(), self.client_height(), self.dpi);
         Layout::contains(&layout.pin, point.x, point.y)
             || Layout::contains(&layout.close, point.x, point.y)
-            || layout.tab_at(point.x, point.y).is_some()
+            || Layout::contains(&layout.settings, point.x, point.y)
+            || if self.settings_open {
+                settings::command_at(
+                    &layout,
+                    &self.settings,
+                    self.autostart_enabled,
+                    self.misans_available,
+                    point.x,
+                    point.y,
+                )
+                .is_some()
+            } else {
+                layout.tab_at(point.x, point.y).is_some()
+            }
     }
 
     fn client_width(&self) -> i32 {

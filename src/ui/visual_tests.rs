@@ -124,6 +124,10 @@ fn render_visual_matrix() {
                 tab,
                 interval_ms: 1000,
                 preview: false,
+                settings: None,
+                autostart: false,
+                misans: true,
+                glass: false,
             };
             bitmap(&format!("target/visual/{name}-{tab:?}.bmp"), dpi, &view);
         }
@@ -137,8 +141,27 @@ fn render_visual_matrix() {
             tab: Tab::Cpu,
             interval_ms: 1000,
             preview: true,
+            settings: None,
+            autostart: false,
+            misans: true,
+            glass: false,
         };
         bitmap(&format!("target/visual/{name}-preview.bmp"), dpi, &view);
+        let settings = Settings {
+            theme: match theme {
+                ResolvedTheme::Light => crate::config::ThemeSetting::Light,
+                ResolvedTheme::Dark => crate::config::ThemeSetting::Dark,
+            },
+            ..Settings::default()
+        };
+        let view = PanelView {
+            preview: false,
+            settings: Some(&settings),
+            misans: name != "light-200-yahei",
+            hover: Hover::Settings,
+            ..view
+        };
+        bitmap(&format!("target/visual/{name}-settings.bmp"), dpi, &view);
     }
     let empty = Snapshot::empty();
     let mut disconnected = sample(59);
@@ -160,6 +183,10 @@ fn render_visual_matrix() {
                 tab,
                 interval_ms: 5000,
                 preview: false,
+                settings: None,
+                autostart: false,
+                misans: true,
+                glass: false,
             };
             bitmap(&format!("target/visual/{name}-{tab:?}.bmp"), 96, &view);
         }
@@ -173,6 +200,10 @@ fn render_visual_matrix() {
             tab: Tab::Cpu,
             interval_ms: 1000,
             preview: true,
+            settings: None,
+            autostart: false,
+            misans: true,
+            glass: false,
         };
         bitmap(&format!("target/visual/{name}-preview.bmp"), 96, &view);
     }
@@ -190,6 +221,10 @@ fn render_visual_matrix() {
         tab: Tab::Cpu,
         interval_ms: 1000,
         preview: true,
+        settings: None,
+        autostart: false,
+        misans: true,
+        glass: false,
     };
     bitmap("target/visual/extremes-preview.bmp", 168, &view);
     for (name, hover) in [
@@ -207,6 +242,10 @@ fn render_visual_matrix() {
             tab: Tab::Cpu,
             interval_ms: 1000,
             preview: false,
+            settings: None,
+            autostart: false,
+            misans: true,
+            glass: false,
         };
         bitmap(&format!("target/visual/hover-{name}.bmp"), 96, &view);
     }

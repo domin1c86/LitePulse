@@ -29,6 +29,10 @@ pub const fn rgb(r: u8, g: u8, b: u8) -> COLORREF {
     COLORREF(r as u32 | ((g as u32) << 8) | ((b as u32) << 16))
 }
 
+pub const fn download_color() -> COLORREF {
+    rgb(48, 170, 100)
+}
+
 pub fn resolve(setting: ThemeSetting) -> ResolvedTheme {
     match setting {
         ThemeSetting::Dark => ResolvedTheme::Dark,

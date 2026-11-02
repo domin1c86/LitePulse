@@ -1,5 +1,27 @@
 # LitePulse 验证记录
 
+## 2026-11-03：设置页、紧凑磨砂概览与标题图标对齐
+
+本次概览为 **140×164 DIP**（原宽 280 DIP 的一半），四项指标压缩布局；上传和下载位于同一行，箭头紧挨数字，下载箭头为绿色。网络标签使用并排上下箭头。关闭和设置使用新增 SVG；标题三个图标统一裁去素材留白、使用同尺寸居中绘制框，图钉增加 1 DIP 光学补偿。
+
+齿轮打开设置页，覆盖托盘菜单全部设置和隐藏/退出操作；与菜单共用 `TrayCommand`、立即应用并保存。未安装 MiSans 的选项禁用；Esc 返回监控。交互测试构建不写设置文件、不修改开机启动开关。
+
+概览使用 DWM `DWMSBT_TRANSIENTWINDOW`，扩展玻璃区域，GDI 后备位图用黑/白两次绘制恢复预乘 alpha，保留字体和 SVG 边缘。支持系统由 DWM 合成 Acrylic；不支持接口时使用圆角实色窗口。API 支持范围与材质说明见 [Microsoft DWM 文档](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type)。Windows 10 回退分支未在真实 Windows 10 设备验证。
+
+| 检查 | 结果 |
+|---|---|
+| `cargo test ui::` | 3 passed / 0 failed / 2 ignored；设置项命令映射、字体禁用、96/168/192 DPI 点击区域通过 |
+| `cargo test`（完整测试，交付前运行） | **29 passed / 0 failed / 2 ignored** |
+| `cargo fmt --all -- --check` | 通过 |
+| `cargo clippy --all-targets --features console -- -D warnings` | 通过，无代码 lint；环境有硬链接缓存回退提示 |
+| `cargo build --release` | 通过，614,400 字节，复制至 `dist/litepulse.exe` |
+| 原生 GDI 排版 | 检查网络页、共用标题栏、设置页、概览；浅色 100%、深色 175%、微软雅黑 200%；概览加载/无数据/断网/100% 和大单位速率无截断 |
+| Windows 11 实际窗口（175%） | 检查三个标题按钮对齐、齿轮进出设置、主题即时切换、采样间隔与托盘指标选择；概览深浅主题、圆角、Acrylic 背景、紧凑单行网络、实时刷新、不抢焦点 |
+
+实际窗口图：[网络页与标题](panel-network-current.jpg)、[深色设置页](settings-dark.jpg)、[浅色磨砂概览](hover-glass-light.jpg)、[深色磨砂概览](hover-glass-dark.jpg)。排版矩阵：[浅色 100%](ui-current-light-100.png)、[深色 175%](ui-current-dark-175.png)、[微软雅黑 200% 与禁用字体](ui-current-light-200-yahei.png)、[概览数据状态](ui-current-preview-states.png)。矩阵内预览为同一 Renderer 的实色绘制；磨砂由实际窗口截图验证。
+
+实际概览仍通过测试入口 F8 触发与 Shell 相同的回调；真实鼠标进入/离开托盘链路未直接自动化验证。开始重编译时旧交互测试实例锁住 exe，退出该实例后重跑完整测试通过；这不是测试逻辑失败。未重复无关的长时间性能测试、跨屏和休眠测试。生产代码最后一次视觉检查后未再改变。
+
 ## 2026-11-03：托盘概览与标签页改版
 
 本次改动将主窗口改为 620×470 DIP、五个标签页，托盘概览为 280×266 DIP。图标来自 `images/`，其中置顶素材的原文件名是 `.svg`。圆环默认 CPU，可在右键菜单选择内存、显存或磁盘活动时间，写入 `tray_metric`。图表保留 60 个采样位置；缺失数据产生空档，改变采样间隔后重新积累历史。

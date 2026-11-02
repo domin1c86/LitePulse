@@ -2,8 +2,8 @@ use crate::win32::dpi;
 use windows::Win32::Foundation::RECT;
 pub const PANEL_W_DIP: f32 = 620.0;
 pub const PANEL_H_DIP: f32 = 470.0;
-pub const PREVIEW_W_DIP: f32 = 280.0;
-pub const PREVIEW_H_DIP: f32 = 266.0;
+pub const PREVIEW_W_DIP: f32 = 140.0;
+pub const PREVIEW_H_DIP: f32 = 164.0;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Tab {
     #[default]
@@ -40,6 +40,7 @@ pub struct Layout {
     pub dpi: u32,
     pub close: RECT,
     pub pin: RECT,
+    pub settings: RECT,
     pub tabs: [RECT; 5],
     pub header_bottom: i32,
     pub content_x: i32,
@@ -72,6 +73,11 @@ impl Layout {
             dpi,
             close,
             pin,
+            settings: RECT {
+                left: pin.left - s(38.0),
+                right: pin.left - s(6.0),
+                ..pin
+            },
             tabs,
             header_bottom: s(44.0),
             content_x: pad,
@@ -80,6 +86,17 @@ impl Layout {
     }
     pub fn s(&self, dip: f32) -> i32 {
         dpi::scale(dip, self.dpi)
+    }
+    pub fn header_icon(&self, button: RECT, optical_y: f32) -> RECT {
+        let size = self.s(18.0);
+        let left = button.left + (button.right - button.left - size) / 2;
+        let top = button.top + (button.bottom - button.top - size) / 2 + self.s(optical_y);
+        RECT {
+            left,
+            top,
+            right: left + size,
+            bottom: top + size,
+        }
     }
     pub fn contains(rect: &RECT, x: i32, y: i32) -> bool {
         x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom
@@ -108,6 +125,8 @@ mod tests {
             }
             assert_eq!(l.tab_at(l.pin.left, l.pin.top), None);
             assert!(l.pin.right < l.close.left);
+            assert!(l.settings.right < l.pin.left);
+            assert_eq!(l.tab_at(l.settings.left, l.settings.top), None);
             assert_eq!(l.tab_at(l.tabs[4].right, l.tabs[4].top), None);
         }
     }

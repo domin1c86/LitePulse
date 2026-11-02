@@ -15,6 +15,9 @@ pub enum Icon {
     Up,
     Down,
     Pin,
+    Close,
+    Settings,
+    Network,
 }
 impl From<Tab> for Icon {
     fn from(tab: Tab) -> Self {
@@ -23,11 +26,35 @@ impl From<Tab> for Icon {
             Tab::Memory => Self::Memory,
             Tab::Gpu => Self::Gpu,
             Tab::Disk => Self::Disk,
-            Tab::Network => Self::Down,
+            Tab::Network => Self::Network,
         }
     }
 }
 pub fn draw(dc: HDC, rect: RECT, icon: Icon, color: COLORREF, bg: COLORREF) {
+    if matches!(icon, Icon::Network) {
+        let middle = (rect.left + rect.right) / 2;
+        draw(
+            dc,
+            RECT {
+                right: middle,
+                ..rect
+            },
+            Icon::Up,
+            color,
+            bg,
+        );
+        draw(
+            dc,
+            RECT {
+                left: middle,
+                ..rect
+            },
+            Icon::Down,
+            super::theme::download_color(),
+            bg,
+        );
+        return;
+    }
     let mask: &[u8; 4096] = match icon {
         Icon::Cpu => include_bytes!("../../assets/ui/cpu.alpha"),
         Icon::Memory => include_bytes!("../../assets/ui/memory.alpha"),
@@ -36,6 +63,9 @@ pub fn draw(dc: HDC, rect: RECT, icon: Icon, color: COLORREF, bg: COLORREF) {
         Icon::Up => include_bytes!("../../assets/ui/up.alpha"),
         Icon::Down => include_bytes!("../../assets/ui/down.alpha"),
         Icon::Pin => include_bytes!("../../assets/ui/pin.alpha"),
+        Icon::Close => include_bytes!("../../assets/ui/close.alpha"),
+        Icon::Settings => include_bytes!("../../assets/ui/settings.alpha"),
+        Icon::Network => unreachable!(),
     };
     let mut pixels = [0u8; 64 * 64 * 4];
     for (i, &alpha) in mask.iter().enumerate() {

@@ -1,11 +1,12 @@
 use windows::Win32::Foundation::{COLORREF, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
-    BitBlt, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, CreateCompatibleBitmap, CreateCompatibleDC,
-    CreateFontW, CreatePen, CreateSolidBrush, DEFAULT_CHARSET, DEFAULT_PITCH, DT_CENTER,
-    DT_END_ELLIPSIS, DT_NOPREFIX, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, DeleteDC, DeleteObject,
-    DrawTextW, FF_DONTCARE, FillRect, FrameRect, GetStockObject, HBITMAP, HDC, HFONT, HGDIOBJ,
-    NULL_PEN, OUT_DEFAULT_PRECIS, PS_DOT, PS_SOLID, Polygon, Polyline, RoundRect, SRCCOPY,
-    SelectObject, SetBkMode, SetTextColor, TRANSPARENT,
+    BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS,
+    CreateCompatibleDC, CreateDIBSection, CreateFontW, CreatePen, CreateSolidBrush,
+    DEFAULT_CHARSET, DEFAULT_PITCH, DIB_RGB_COLORS, DT_CENTER, DT_END_ELLIPSIS, DT_NOPREFIX,
+    DT_RIGHT, DT_SINGLELINE, DT_VCENTER, DeleteDC, DeleteObject, DrawTextW, FF_DONTCARE, FillRect,
+    FrameRect, GdiFlush, GetStockObject, HBITMAP, HDC, HFONT, HGDIOBJ, NULL_PEN,
+    OUT_DEFAULT_PRECIS, PS_DOT, PS_SOLID, Polygon, Polyline, RoundRect, SRCCOPY, SelectObject,
+    SetBkMode, SetTextColor, TRANSPARENT,
 };
 use windows::core::PCWSTR;
 
@@ -24,6 +25,8 @@ pub enum Hover {
     Pin,
     Close,
     Tab(Tab),
+    Settings,
+    Choice(usize),
 }
 
 pub struct PanelView<'a> {
@@ -36,6 +39,10 @@ pub struct PanelView<'a> {
     pub tab: Tab,
     pub interval_ms: u32,
     pub preview: bool,
+    pub settings: Option<&'a crate::config::Settings>,
+    pub autostart: bool,
+    pub misans: bool,
+    pub glass: bool,
 }
 
 struct Fonts {
@@ -109,6 +116,7 @@ pub struct Renderer {
     fonts: Option<Fonts>,
     fonts_dpi: u32,
     fonts_family: String,
+    pixels: *mut u8,
 }
 
 impl Default for Renderer {
@@ -121,6 +129,7 @@ impl Default for Renderer {
             fonts: None,
             fonts_dpi: 0,
             fonts_family: String::new(),
+            pixels: std::ptr::null_mut(),
         }
     }
 }
@@ -146,6 +155,7 @@ impl Renderer {
         self.bitmap = HBITMAP(std::ptr::null_mut());
         self.old_bitmap = HGDIOBJ(std::ptr::null_mut());
         self.size = (0, 0);
+        self.pixels = std::ptr::null_mut();
     }
 
     pub fn invalidate_fonts(&mut self) {
@@ -180,7 +190,22 @@ impl Renderer {
         if mem_dc.0.is_null() {
             return false;
         }
-        let bitmap = unsafe { CreateCompatibleBitmap(target, width, height) };
+        let info = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: width,
+                biHeight: -height,
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut pixels = std::ptr::null_mut();
+        let bitmap =
+            unsafe { CreateDIBSection(Some(target), &info, DIB_RGB_COLORS, &mut pixels, None, 0) }
+                .unwrap_or_default();
         if bitmap.0.is_null() {
             unsafe {
                 let _ = DeleteDC(mem_dc);
@@ -190,6 +215,7 @@ impl Renderer {
         let old = unsafe { SelectObject(mem_dc, HGDIOBJ(bitmap.0)) };
         self.mem_dc = mem_dc;
         self.bitmap = bitmap;
+        self.pixels = pixels.cast();
         self.old_bitmap = old;
         self.size = (width, height);
         true
@@ -206,7 +232,10 @@ impl Renderer {
         }
         let dc = self.mem_dc;
         let fonts = self.fonts.as_ref().expect("fonts checked above");
-        let palette = theme::palette(view.theme);
+        let mut palette = theme::palette(view.theme);
+        if view.glass {
+            palette.bg = COLORREF(0);
+        }
         let layout = Layout::new(width, height, dpi);
 
         // Background and outer border.
@@ -220,25 +249,63 @@ impl Renderer {
             },
             palette.bg,
         );
-        frame_rect(
-            dc,
-            &RECT {
-                left: 0,
-                top: 0,
-                right: width,
-                bottom: height,
-            },
-            palette.border,
-        );
+        if !view.preview {
+            frame_rect(
+                dc,
+                &RECT {
+                    left: 0,
+                    top: 0,
+                    right: width,
+                    bottom: height,
+                },
+                palette.border,
+            );
+        }
 
         if view.preview {
             draw_preview(dc, &layout, fonts, &palette, view);
         } else {
             draw_header(dc, &layout, fonts, &palette, view);
-            draw_body(dc, &layout, fonts, &palette, view);
+            if view.settings.is_some() {
+                draw_settings(dc, &layout, fonts, &palette, view);
+            } else {
+                draw_body(dc, &layout, fonts, &palette, view);
+            }
         }
 
         unsafe {
+            // Recover premultiplied alpha using black/white background passes.
+            // Preserve text and SVG edge coverage over the live Acrylic.
+            if view.glass {
+                let _ = GdiFlush();
+                let len = (width * height * 4) as usize;
+                let black = std::slice::from_raw_parts(self.pixels, len).to_vec();
+                let mut white_palette = palette;
+                white_palette.bg = theme::rgb(255, 255, 255);
+                fill_rect(
+                    dc,
+                    &RECT {
+                        left: 0,
+                        top: 0,
+                        right: width,
+                        bottom: height,
+                    },
+                    white_palette.bg,
+                );
+                draw_preview(dc, &layout, fonts, &white_palette, view);
+                let _ = GdiFlush();
+                for (pixel, black) in std::slice::from_raw_parts_mut(self.pixels, len)
+                    .chunks_exact_mut(4)
+                    .zip(black.chunks_exact(4))
+                {
+                    let transparency = (0..3)
+                        .map(|i| pixel[i].saturating_sub(black[i]) as u32)
+                        .sum::<u32>()
+                        / 3;
+                    pixel[..3].copy_from_slice(&black[..3]);
+                    pixel[3] = 255 - transparency as u8;
+                }
+            }
             let _ = BitBlt(target, 0, 0, width, height, Some(dc), 0, 0, SRCCOPY);
         }
     }
@@ -306,12 +373,7 @@ fn draw_header(dc: HDC, l: &Layout, f: &Fonts, p: &Palette, v: &PanelView<'_>) {
         p.bg
     };
     fill_round_rect(dc, &l.pin, l.s(5.0), pin_bg);
-    let icon = RECT {
-        left: l.pin.left + l.s(7.0),
-        top: l.pin.top + l.s(5.0),
-        right: l.pin.right - l.s(7.0),
-        bottom: l.pin.bottom - l.s(5.0),
-    };
+    let icon = l.header_icon(l.pin, 1.0);
     icons::draw(
         dc,
         icon,
@@ -322,24 +384,34 @@ fn draw_header(dc: HDC, l: &Layout, f: &Fonts, p: &Palette, v: &PanelView<'_>) {
     if v.hover == Hover::Close {
         fill_round_rect(dc, &l.close, l.s(5.0), p.hover);
     }
-    let inset = l.s(10.0);
-    draw_line(
+    let close_bg = if v.hover == Hover::Close {
+        p.hover
+    } else {
+        p.bg
+    };
+    icons::draw(
         dc,
-        l.close.left + inset,
-        l.close.top + inset,
-        l.close.right - inset,
-        l.close.bottom - inset,
-        1,
+        l.header_icon(l.close, 0.0),
+        Icon::Close,
         p.dim,
+        close_bg,
     );
-    draw_line(
+    let settings_bg = if v.hover == Hover::Settings || v.settings.is_some() {
+        p.hover
+    } else {
+        p.bg
+    };
+    fill_round_rect(dc, &l.settings, l.s(5.0), settings_bg);
+    icons::draw(
         dc,
-        l.close.right - inset,
-        l.close.top + inset,
-        l.close.left + inset,
-        l.close.bottom - inset,
-        1,
-        p.dim,
+        l.header_icon(l.settings, 0.0),
+        Icon::Settings,
+        if v.settings.is_some() {
+            p.accent
+        } else {
+            p.dim
+        },
+        settings_bg,
     );
     fill_rect(
         dc,
@@ -351,6 +423,9 @@ fn draw_header(dc: HDC, l: &Layout, f: &Fonts, p: &Palette, v: &PanelView<'_>) {
         },
         p.track,
     );
+    if v.settings.is_some() {
+        return;
+    }
     for (i, tab) in Tab::ALL.into_iter().enumerate() {
         let r = l.tabs[i];
         let selected = tab == v.tab;
@@ -728,16 +803,67 @@ fn draw_body(dc: HDC, l: &Layout, f: &Fonts, p: &Palette, v: &PanelView<'_>) {
     }
 }
 
-fn draw_preview(dc: HDC, l: &Layout, f: &Fonts, p: &Palette, v: &PanelView<'_>) {
+fn draw_settings(dc: HDC, l: &Layout, f: &Fonts, p: &Palette, v: &PanelView<'_>) {
     draw_text(
         dc,
-        "LitePulse",
-        &rect(l, 18.0, 8.0, 244.0, 22.0),
+        "设置",
+        &row(l, 54.0, 30.0),
+        f.title,
+        p.text,
+        Align::Left,
+        false,
+    );
+    draw_text(
+        dc,
+        "修改立即生效 · 点击齿轮返回监控",
+        &row(l, 84.0, 18.0),
         f.small,
         p.dim,
         Align::Left,
         false,
     );
+    for (i, label) in super::settings::ROW_LABELS.iter().enumerate() {
+        draw_text(
+            dc,
+            label,
+            &rect(l, 24.0, 110.0 + i as f32 * 47.0, 130.0, 35.0),
+            f.label,
+            p.dim,
+            Align::Left,
+            false,
+        );
+    }
+    for (i, c) in super::settings::choices(l, v.settings.unwrap(), v.autostart, v.misans)
+        .into_iter()
+        .enumerate()
+    {
+        let bg = if c.selected {
+            blend(p.accent, p.bg, 16)
+        } else if v.hover == Hover::Choice(i) && c.enabled {
+            p.hover
+        } else {
+            p.track
+        };
+        fill_round_rect(dc, &c.rect, l.s(5.0), bg);
+        draw_text(
+            dc,
+            c.label,
+            &c.rect,
+            f.label,
+            if !c.enabled {
+                p.dim
+            } else if c.selected {
+                p.accent
+            } else {
+                p.text
+            },
+            Align::Center,
+            false,
+        );
+    }
+}
+
+fn draw_preview(dc: HDC, l: &Layout, f: &Fonts, p: &Palette, v: &PanelView<'_>) {
     let s = v.snapshot;
     let values = [
         s.and_then(|s| s.cpu_pct),
@@ -750,11 +876,11 @@ fn draw_preview(dc: HDC, l: &Layout, f: &Fonts, p: &Palette, v: &PanelView<'_>) 
         .into_iter()
         .enumerate()
     {
-        let y = 36.0 + i as f32 * 43.0;
+        let y = 10.0 + i as f32 * 31.0;
         let color = accent(tab, p);
         icons::draw(
             dc,
-            rect(l, 18.0, y + 5.0, 24.0, 24.0),
+            rect(l, 10.0, y + 3.0, 16.0, 16.0),
             tab.into(),
             color,
             p.bg,
@@ -766,41 +892,45 @@ fn draw_preview(dc: HDC, l: &Layout, f: &Fonts, p: &Palette, v: &PanelView<'_>) 
             } else {
                 tab.label()
             },
-            &rect(l, 52.0, y, 64.0, 18.0),
+            &rect(l, 32.0, y, 54.0, 18.0),
             f.small,
             p.dim,
             Align::Left,
             false,
         );
-        progress(
-            dc,
-            &rect(l, 52.0, y + 24.0, 142.0, 6.0),
-            values[i],
-            color,
-            p.track,
-        );
         draw_text(
             dc,
             &percent(values[i]),
-            &rect(l, 201.0, y + 5.0, 60.0, 25.0),
-            f.value_small,
+            &rect(l, 85.0, y, 45.0, 18.0),
+            f.small,
             p.text,
             Align::Right,
             false,
         );
+        progress(
+            dc,
+            &rect(l, 32.0, y + 20.0, 98.0, 4.0),
+            values[i],
+            color,
+            p.track,
+        );
     }
-    fill_rect(dc, &rect(l, 18.0, 216.0, 244.0, 1.0), p.track);
     let net = s.and_then(|s| s.net.as_ref()).filter(|n| n.connected);
-    for (x, icon, value) in [
-        (18.0, Icon::Up, net.map(|n| n.up_bps)),
-        (147.0, Icon::Down, net.map(|n| n.down_bps)),
+    for (x, icon, value, color) in [
+        (8.0, Icon::Up, net.map(|n| n.up_bps), p.net),
+        (
+            72.0,
+            Icon::Down,
+            net.map(|n| n.down_bps),
+            theme::download_color(),
+        ),
     ] {
-        icons::draw(dc, rect(l, x, 232.0, 16.0, 17.0), icon, p.net, p.bg);
+        icons::draw(dc, rect(l, x, 140.0, 8.0, 14.0), icon, color, p.bg);
         draw_text(
             dc,
-            &rate(value),
-            &rect(l, x + 23.0, 228.0, 94.0, 25.0),
-            f.value_small,
+            &rate(value).replace(' ', ""),
+            &rect(l, x + 10.0, 139.0, 49.0, 18.0),
+            f.small,
             p.text,
             Align::Left,
             false,
