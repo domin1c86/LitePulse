@@ -1,102 +1,102 @@
 # LitePulse
 
-LitePulse 是一个 Windows 桌面系统监控小工具：实时显示 **CPU、内存、显卡、显存、磁盘、网络** 占用。悬停托盘图标显示紧凑概览，点击后打开五个标签页的性能面板。
+**English** | [简体中文](README_ZH.md)
 
-- 原生 Rust + Win32 + GDI，无 WebView、无 .NET 运行时、无 Electron。
-- 单文件 exe；本次 release 构建约 **602 KB**。
-- 默认不加载任何显卡厂商 SDK；GPU 数据来自 Windows 性能计数器和 DXGI。
-- 不联网、不采集遥测、不需要管理员权限、不安装驱动。
+LitePulse is a lightweight Windows system monitor that tracks **CPU, memory, GPU, VRAM, disk, and network** activity in real time. Hover over its system tray icon for a compact overview, or click it to open a performance panel with five tabs.
 
-![LitePulse 浅色面板](docs/panel-light.png)
+- Built with native Rust + Win32 + GDI. No WebView, .NET runtime, or Electron.
+- A single executable, approximately **602 KB** in the current release build.
+- No GPU vendor SDK loaded by default; GPU data comes from Windows performance counters and DXGI.
+- No network access, telemetry, administrator privileges, or driver installation required.
 
-![LitePulse 深色面板](docs/panel-dark.png)
+![LitePulse light panel](docs/panel-light.png)
 
-## 功能
+![LitePulse dark panel](docs/panel-dark.png)
 
-- **CPU**：总利用率 + 最近 60 个采样点走势。
-- **内存**：占用历史、已用/可用容量、内存组成条。
-- **显卡/显存**：GPU 利用率与专用显存占用两张历史图；自动选择独显（按专用显存最大）。
-- **磁盘**：所有物理盘的活动时间图、读取/写入双曲线，以及系统盘（通常是 C:）已用空间。
-- **网络**：默认路由网卡的下载/上传双曲线和实时速率，统一使用字节速率单位。
-- **图表**：任务管理器式网格与填充曲线；最新数据靠右，保留 60 个采样位置；缺失数据留空档，切换采样间隔清空旧时间轴。
-- **托盘小图标**：默认显示 CPU 利用率；右键“托盘图标指标”可改为内存占用、显存占用或磁盘活动时间，选择会保存。圆环随采样更新，颜色按 70%/90% 变色。
-- **托盘概览**：CPU、内存、显存、磁盘四行进度条，底部同一行显示上传/下载速率，箭头紧挨数字；宽度 140 DIP，圆角边框，Windows 11 支持原生 Acrylic 磨砂背景，浅色采用接近白纸的浅白衬底以减少灰蒙感；上传箭头固定红色、下载箭头固定绿色；采用 `images/` 提供的 SVG 图形，不抢焦点，跟随主题与字体。
-- **托盘菜单**：显示/隐藏面板、总在最前、开机自动启动、采样间隔（1/2/5/30 秒、1 分钟）、主题（跟随系统/深色/浅色）、字体（MiSans/微软雅黑 UI）、托盘图标指标、退出。主面板右键也能打开菜单。
-- **交互采样**：新配置默认后台 30 秒、自动加速开启；悬停托盘、打开右键菜单或主界面时使用 1 秒采样，全部结束后恢复后台间隔。后台间隔可选 1/2/5/30 秒、1 分钟；基础间隔为 1 秒时禁用加速开关。设置页和右键菜单均可控制；既有配置保留所选间隔。实际采样间隔变化时重新积累图表历史。
-- **设置页**：点击右上角齿轮进入，包含置顶、开机启动、采样间隔、主题、字体、托盘指标，以及隐藏/退出；修改立即生效，复用托盘菜单的设置处理。再次点击齿轮或按 Esc 返回监控。
-- **低干扰**：关闭按钮和 Esc 只是隐藏到托盘；面板不占任务栏、不进入 Alt+Tab；单实例运行。
-- **自适应**：Per-Monitor V2 DPI、多显示器位置钳制、浅/深色主题、休眠/锁屏恢复后重置基线。
-- **字体可选**：面板默认使用本机 **MiSans**（字体文件不随 exe 分发）；托盘菜单可切换回微软雅黑 UI。未安装 MiSans 时自动回退，不会出现替代字体导致的排版异常。
-- **GPU 后端可选**：默认 Windows PDH + DXGI（低内存、AMD/Intel/NVIDIA 通用）；可切换到 NVIDIA NVML（更精确的 GPU 利用率、显存和温度，但内存多约 15 MB）。
+## Features
 
-## 改版前资源基线
+- **CPU**: total utilization and a history of the latest 60 samples.
+- **Memory**: usage history, used/available capacity, and a memory composition bar.
+- **GPU and VRAM**: separate history charts for GPU utilization and dedicated VRAM usage. Automatically selects the adapter with the most dedicated VRAM, typically the discrete GPU.
+- **Disk**: activity across all physical disks, read/write curves, and used space on the system drive (usually C:).
+- **Network**: download/upload curves and live transfer rates for the default-route network adapter, consistently displayed in bytes per second.
+- **Charts**: Task Manager-style grids and filled curves, with the latest data on the right and 60 sample positions. Missing data leaves gaps; changing the sampling interval resets the timeline.
+- **Tray icon**: shows CPU utilization by default. Use the tray menu to select memory usage, VRAM usage, or disk activity instead; the selection is saved. The ring updates with each sample and changes color at 70% and 90%.
+- **Tray overview**: four progress bars for CPU, memory, VRAM, and disk, plus upload/download rates on one line with arrows beside the values. The overview is 140 DIP wide with rounded borders and supports native Acrylic on Windows 11. The light theme uses a near-white backing to reduce gray tint. Upload arrows are red and download arrows are green. Icons come from the SVG files in `images/`; the overview follows the selected theme and font without taking focus.
+- **Tray menu**: show/hide the panel, always on top, start with Windows, sampling interval (1/2/5/30 seconds or 1 minute), theme (system/dark/light), font (MiSans/Microsoft YaHei UI), tray metric, and exit. Right-clicking the main panel opens the same menu.
+- **Interaction sampling**: new configurations use a 30-second background interval with automatic acceleration enabled. Hovering over the tray icon, opening the context menu, or showing the panel switches sampling to 1 second; the background interval resumes when all interactions end. Choose a background interval of 1/2/5/30 seconds or 1 minute. The acceleration toggle is disabled at a 1-second base interval. Both settings and the context menu expose these controls; existing configurations keep their selected interval. Charts restart whenever the actual sampling interval changes.
+- **Settings page**: click the gear in the upper-right corner to manage always on top, startup, sampling, theme, font, and tray metric, or to hide/exit the app. Changes take effect immediately and use the same handlers as the tray menu. Click the gear again or press Esc to return to monitoring.
+- **Unobtrusive operation**: the close button and Esc hide the panel to the tray. The panel stays out of the taskbar and Alt+Tab. Only one instance runs at a time.
+- **Display support**: Per-Monitor V2 DPI awareness, position clamping across monitors, light/dark themes, and sampling baseline resets after sleep or lock-screen recovery.
+- **Font selection**: uses the locally installed **MiSans** font by default; font files are not bundled. Switch to Microsoft YaHei UI from the tray menu. If MiSans is unavailable, the app falls back automatically to keep the layout consistent.
+- **Optional GPU backend**: Windows PDH + DXGI is the default, with low memory usage and support for AMD, Intel, and NVIDIA. NVIDIA NVML is optional and provides more accurate GPU utilization, VRAM usage, and temperature at a cost of roughly 15 MB more memory.
 
-以下是此前紧凑面板的资源测量，本次界面改版未重复长时间性能测试。当前可执行文件大小为 616,448 字节。
+## Resource baseline before the panel redesign
 
-测试机：Windows 11 Build 26200、32 GB 内存、RTX 5060 Laptop 8 GB、3200×2000 @175%、1 秒采样、release 构建。
+The measurements below are from the previous compact panel. Long-duration performance testing was not repeated for the panel redesign. The current executable is 616,448 bytes.
 
-| 场景 | 工作集 | 私有内存 | CPU（单核占比） | GDI / USER 对象 |
+Test system: Windows 11 Build 26200, 32 GB RAM, RTX 5060 Laptop 8 GB, 3200×2000 at 175% scaling, 1-second sampling, release build.
+
+| Scenario | Working set | Private memory | CPU (% of one core) | GDI / USER objects |
 |---|---:|---:|---:|---:|
-| 仅托盘（隐藏 60 秒） | 21.2 MB | 7.5 MB | 0.29% | 13 / 17 |
-| 面板可见（30 秒） | 21.2 MB | 7.5 MB | 0.47% | 21 / 17 |
+| Tray only (hidden for 60 seconds) | 21.2 MB | 7.5 MB | 0.29% | 13 / 17 |
+| Panel visible (30 seconds) | 21.2 MB | 7.5 MB | 0.47% | 21 / 17 |
 
-- exe：`537,088` 字节。
-- 启动到托盘：约 20–30 ms（`starting` → `attached` 日志）。
-- MiSans 比此前的微软雅黑 UI 基线多约 1.9 MB 工作集（字体缓存）；隐藏时会释放后备位图和 HFONT，GDI 对象回落到 13。
-- 隐藏时整体约占 0.29% 单核，折合 16 核总量约 0.02%；此前的 10 分钟连续运行测试（微软雅黑 UI）平均 0.20% 单核、工作集约 19.5 MB，句柄数稳定。
-- 如果强制使用 NVML 后端，隐藏内存约 34 MB，但能读到 GPU 温度；默认 PDH 后端更符合低占用目标。
+- Executable at the time of measurement: `537,088` bytes.
+- Startup to tray: approximately 20–30 ms (`starting` → `attached` in the log).
+- MiSans adds roughly 1.9 MB to the working set compared with the earlier Microsoft YaHei UI baseline due to font caching. Hiding the panel releases the backing bitmap and HFONT resources, bringing GDI objects back to 13.
+- Hidden CPU usage is roughly 0.29% of one core, or about 0.02% across 16 cores. An earlier 10-minute run with Microsoft YaHei UI averaged 0.20% of one core, with a working set of about 19.5 MB and stable handle counts.
+- Forcing NVML raises hidden memory usage to roughly 34 MB but enables GPU temperature readings. The default PDH backend better suits the low-overhead goal.
 
-更完整的数据与验证过程见 [docs/verification.md](docs/verification.md)。
+See [the verification record](docs/verification.md) for full measurements and procedures (in Chinese).
 
-## 构建
+## Build
 
-环境要求：
+Requirements:
 
-- Windows 10/11 x64。
-- Rust stable（已验证 1.97.1，MSVC 工具链）。
-- Visual Studio Build Tools + Windows SDK（用于链接和 exe 图标资源）。
-- 首次构建需要访问 crates.io 拉取依赖。
-
-命令：
+- Windows 10/11 x64.
+- Rust stable with the MSVC toolchain (verified with 1.97.1).
+- Visual Studio Build Tools and Windows SDK for linking and executable icon resources.
+- Access to crates.io to download dependencies on the first build.
 
 ```powershell
 cargo build --release
-# 产物：target\release\litepulse.exe
+# Output: target\release\litepulse.exe
 ```
 
-或者运行构建脚本（会先执行 fmt/test/clippy，再构建 release 并复制到 `dist`）：
+Alternatively, run the build script to check formatting, run the full test suite and Clippy, build the release, and copy the executable to `dist/`:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
 ```
 
-开发/诊断模式：
+Development/diagnostic mode:
 
 ```powershell
 cargo run --features console -- --probe 5
 ```
 
-`--probe 5` 会逐秒打印六项指标、GPU 后端、网卡与每项采集耗时，便于与任务管理器 / `nvidia-smi` 对照。
+`--probe 5` prints all six metrics, the GPU backend, network adapter, and collection timings every second for comparison with Task Manager or `nvidia-smi`.
 
-## 使用
+## Usage
 
-1. 双击 `litepulse.exe`：托盘出现圆环图标，同时显示面板。
-2. 悬停托盘图标查看占用条与上传/下载；左键点击显示/隐藏主面板。右键打开菜单，选择“托盘图标指标”设置动态圆环的数据来源；“字体”同时影响主面板和概览，菜单仍由系统绘制。
-3. 点击 CPU、内存、显卡、磁盘、网络标签切换图表，左右方向键也能切换。右上角齿轮打开设置页，图钉控制总在最前，关闭图标隐藏到托盘。Esc 在设置页返回监控，在监控页隐藏面板。
-4. 右键菜单中的“退出 LitePulse”才会真正结束进程。
-5. 勾选“开机自动启动”后写入 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，启动参数为 `--startup`（只留托盘，不弹面板）。建议先把 exe 放到固定目录再开启；之后移动 exe 并在新位置手动启动一次，会自动修正 Run 路径。
+1. Double-click `litepulse.exe`. A ring icon appears in the system tray and the panel opens.
+2. Hover over the tray icon to view usage bars and upload/download rates. Left-click to show/hide the panel. Right-click to open the menu and choose the tray metric for the ring. The font setting applies to both the panel and overview; the menu is drawn by Windows.
+3. Select the CPU, Memory, GPU, Disk, or Network tab, or switch tabs with the left/right arrow keys. The upper-right gear opens settings, the pin toggles always on top, and the close icon hides the panel. Esc returns from settings to monitoring, or hides the monitoring panel.
+4. Choose **Exit LitePulse** from the context menu to stop the app completely.
+5. Enabling **Start with Windows** adds an entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` with the `--startup` argument, which starts the app in the tray without opening the panel. Put the executable in a permanent location before enabling this option. If you move it later, launching it once from the new location automatically updates the Run path.
 
-> Windows 11 默认会把新托盘图标收进“隐藏的图标”溢出区。打开任务栏的 `^`，把 LitePulse 圆环拖到任务栏即可常显；这是 Windows 的托盘策略，不是程序遗漏。
+> Windows 11 usually puts new tray icons in the hidden-icons overflow. Open `^` on the taskbar and drag the LitePulse ring onto the taskbar to keep it visible. This is Windows tray behavior.
 
-命令行参数：
+Command-line arguments:
 
-- `--startup`：启动后只驻留托盘。
-- `--probe [秒数]`：无窗口采样诊断（需配合 `--features console` 构建）。
-- `--version`：输出版本号。
+- `--startup`: start in the tray with the panel hidden.
+- `--probe [seconds]`: collect diagnostic samples without a window; requires a build with `--features console`.
+- `--version`: print the version.
 
-## GPU 后端与低占用取舍
+## GPU backends and resource tradeoffs
 
-默认：
+Default data sources:
 
 ```text
 Windows PDH:  \GPU Engine(*)\Utilization Percentage
@@ -104,39 +104,39 @@ Windows PDH:  \GPU Engine(*)\Utilization Percentage
 DXGI:         adapter name / dedicated VRAM / LUID
 ```
 
-优点：不加载 NVIDIA DLL，隐藏内存约 19 MB，支持 AMD/Intel/NVIDIA；缺点：没有温度，GPU 利用率是“当前最忙 GPU 进程/引擎”的近似值，和 `nvidia-smi` 可能相差几个百分点。
+The default backend does not load NVIDIA DLLs, uses roughly 19 MB of memory while hidden, and supports AMD, Intel, and NVIDIA. It does not provide temperature readings. GPU utilization approximates the busiest GPU process/engine and may differ from `nvidia-smi` by a few percentage points.
 
-强制 NVML（仅 NVIDIA，含温度）：
+Force NVML (NVIDIA only, with temperature):
 
 ```powershell
 $env:LITEPULSE_GPU_BACKEND = "nvml"
 .\litepulse.exe
 ```
 
-完全关闭 GPU 采集（例如排查 NVML/PDH 兼容性问题）：
+Disable GPU collection entirely, for example when investigating NVML/PDH compatibility:
 
 ```powershell
 $env:LITEPULSE_DISABLE_GPU = "1"
 .\litepulse.exe
 ```
 
-## 配置文件与日志
+## Configuration and logs
 
-- 设置：`%LOCALAPPDATA%\LitePulse\settings.json`
-- 日志：`%LOCALAPPDATA%\LitePulse\litepulse.log`（只记录启动、后端选择、错误与退出）
+- Settings: `%LOCALAPPDATA%\LitePulse\settings.json`
+- Log: `%LOCALAPPDATA%\LitePulse\litepulse.log` (startup, backend selection, errors, and shutdown only)
 
-设置包含主题、后台采样间隔、`boost_on_interaction`（交互时自动切到 1 秒）、是否总在最前、字体、窗口位置，以及 `tray_metric`（`cpu`、`memory`、`gpu`、`disk`，其中 `gpu` 表示显存占用）。旧设置文件会自动采用 CPU 默认值。删除设置文件即可恢复默认（跟随系统主题、后台 30 秒、交互加速开启、总在最前、MiSans、CPU 圆环）。也可以直接把 `font_family` 改成其他已安装的字体族名；程序会先确认字体可用，不可用时回退到微软雅黑 UI。
+Settings include the theme, background sampling interval, `boost_on_interaction` (automatically switch to 1-second sampling during interaction), always on top, font, window position, and `tray_metric` (`cpu`, `memory`, `gpu`, or `disk`; `gpu` means VRAM usage). Older settings files default to the CPU tray metric. Delete the settings file to restore the defaults: system theme, 30-second background sampling, interaction acceleration enabled, always on top, MiSans, and the CPU ring. You can also set `font_family` to another installed font family; the app checks availability and falls back to Microsoft YaHei UI if needed.
 
-## 已知限制
+## Known limitations
 
-- 不显示 CPU 温度/风扇/功耗；这些需要额外驱动或特权，和“低占用 + 无管理员权限”冲突。
-- 不做每进程排行、历史数据库、阈值告警或自动更新。
-- 网络取默认路由网卡，不聚合多块同时上网的网卡；磁盘取所有物理盘合计与系统盘容量。
-- GPU 显存总量来自 DXGI，可能比 NVIDIA 驱动报告的值少约 3%（本机 7.7 GB vs 8.0 GB）；显存已用量基本一致。
-- 无安装包/代码签名；如需开机自启请使用托盘菜单。
-- 主要验证环境为 Windows 11；Windows 10 1809+ 为尽力兼容。
+- No CPU temperature, fan speed, or power readings. These require additional drivers or privileges, which conflict with the low-overhead, no-admin design.
+- No per-process rankings, historical database, threshold alerts, or automatic updates.
+- Network data comes from the default-route adapter, without aggregation across multiple active adapters. Disk activity is aggregated across physical disks; capacity is shown for the system drive.
+- Total VRAM comes from DXGI and may be about 3% lower than the NVIDIA driver reports (7.7 GB vs. 8.0 GB on the test system). Used VRAM is broadly consistent.
+- No installer or code signing. Enable startup through the tray menu if needed.
+- Primarily verified on Windows 11; Windows 10 1809+ support is best effort.
 
-## 开发与测试
+## Development and testing
 
 ```powershell
 cargo fmt --all -- --check
@@ -145,6 +145,6 @@ cargo clippy --all-targets --features console -- -D warnings
 cargo build --release
 ```
 
-当前 37 个自动测试覆盖：CPU 利用率公式、速率计算与重置、历史环形缓冲与缺失空档、托盘指标选择和设置序列化、字体族匹配、单位格式化、托盘提示截断、GPU 计数器聚合、标签命中与图表坐标、磨砂前景保色、长间隔配置与网络速率、采样唤醒、交互状态组合与禁用开关等。另有两个默认跳过的手动视觉测试入口，执行方式与截图见 [验证记录](docs/verification.md)。
+The current 37 automated tests cover CPU utilization calculations, rate calculations and resets, the history ring buffer and missing samples, tray metric selection and settings serialization, font family matching, unit formatting, tray tooltip truncation, GPU counter aggregation, tab hit testing and chart coordinates, foreground color preservation on Acrylic, long sampling intervals and network rates, sampling wakeups, interaction state combinations, and disabled toggles. Manual visual test entry points are ignored by default; see [the verification record](docs/verification.md) for commands and screenshots (in Chinese).
 
-`assets/ui/*.alpha` 是由用户 SVG 生成的 64×64 透明度蒙版，编译时嵌入 exe。修改 SVG 后，可在 Node.js 能找到 `sharp` 的环境中运行 `node tools/gen_ui_icons.cjs` 重新生成；普通 Rust 构建不需要 Node.js 或 SVG 运行时。
+`assets/ui/*.alpha` contains 64×64 alpha masks generated from the supplied SVG files and embedded at compile time. After editing an SVG, run `node tools/gen_ui_icons.cjs` in an environment where Node.js can find `sharp` to regenerate the masks. Normal Rust builds require neither Node.js nor an SVG runtime.
